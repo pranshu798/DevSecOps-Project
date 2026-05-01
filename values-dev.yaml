@@ -1,0 +1,60 @@
+# helm/springboot-app/values-dev.yaml
+# ─────────────────────────────────────
+#  DEV environment overrides
+# ─────────────────────────────────────
+
+replicaCount: 1
+environment: dev
+
+image:
+  repository: ""         # Injected by Jenkinsfile --set
+  tag: ""                # Injected by Jenkinsfile --set
+  pullPolicy: Always
+
+service:
+  type: LoadBalancer
+  port: 80
+  targetPort: 8080
+
+ingress:
+  enabled: false         # Use raw LoadBalancer in dev for simplicity
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
+
+autoscaling:
+  enabled: false
+
+livenessProbe:
+  httpGet:
+    path: /actuator/health/liveness
+    port: 8080
+  initialDelaySeconds: 30
+  periodSeconds: 10
+
+readinessProbe:
+  httpGet:
+    path: /actuator/health/readiness
+    port: 8080
+  initialDelaySeconds: 20
+  periodSeconds: 5
+
+env:
+  - name: SPRING_PROFILES_ACTIVE
+    value: "dev"
+  - name: LOG_LEVEL
+    value: "DEBUG"
+  - name: DB_URL
+    valueFrom:
+      secretKeyRef:
+        name: db-secret-dev
+        key: url
+
+nodeSelector: {}
+tolerations: []
+affinity: {}

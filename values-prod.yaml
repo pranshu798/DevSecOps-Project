@@ -1,0 +1,113 @@
+# helm/springboot-app/values-prod.yaml
+# ─────────────────────────────────────
+#  PROD environment overrides
+# ─────────────────────────────────────
+
+replicaCount: 3
+environment: prod
+
+image:
+  repository: ""
+  tag: ""
+  pullPolicy: IfNotPresent    # Stable image pull policy for prod
+
+service:
+  type: ClusterIP             # Prod uses Ingress + ALB, not raw LB
+  port: 80
+  targetPort: 8080
+
+ingress:
+  enabled: true
+  className: "nginx"
+  annotations:
+    kubernetes.io/ingress.class: nginx
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/proxy-body-size: "10m"
+    # AWS ALB annotations (uncomment if using AWS Load Balancer Controller)
+    # kubernetes.io/ingress.class: alb
+    # alb.ingress.kubernetes.io/scheme: internet-facing
+    # alb.ingress.kubernetes.io/target-type: ip
+    # alb.ingress.kubernetes.io/certificate-arn: arn:aws:acm:...
+  hosts:
+    - host: app.pranshu.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: prod-tls-secret
+      hosts:
+        - app.pranshu.com
+
+resources:
+  requests:
+    cpu: 500m
+    memory: 1Gi
+  limits:
+    cpu: 2000m
+    memory: 2Gi
+
+autoscaling:
+  enabled: true
+  minReplicas: 3
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 60
+  targetMemoryUtilizationPercentage: 70
+
+# Pod Disruption Budget – ensure at least 2 pods are always up during rolling updates
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 2
+
+# Rolling update strategy – zero-downtime
+strategy:
+  type: RollingUpdate
+  rollingUpdate:
+    maxSurge: 1
+    maxUnavailable: 0
+
+livenessProbe:
+  httpGet:
+    path: /actuator/health/liveness
+    port: 8080
+  initialDelaySeconds: 45
+  periodSeconds: 10
+  failureThreshold: 3
+
+readinessProbe:
+  httpGet:
+    path: /actuator/health/readiness
+    port: 8080
+  initialDelaySeconds: 30
+  periodSeconds: 5
+  failureThreshold: 3
+
+env:
+  - name: SPRING_PROFILES_ACTIVE
+    value: "prod"
+  - name: LOG_LEVEL
+    value: "WARN"
+  - name: DB_URL
+    valueFrom:
+      secretKeyRef:
+        name: db-secret-prod
+        key: url
+
+# Spread pods across AZs
+topologySpreadConstraints:
+  - maxSkew: 1
+    topologyKey: topology.kubernetes.io/zone
+    whenUnsatisfiable: DoNotSchedule
+    labelSelector:
+      matchLabels:
+        app: springboot-app
+
+affinity:
+  podAntiAffinity:
+    requiredDuringSchedulingIgnoredDuringExecution:
+      - labelSelector:
+          matchExpressions:
+            - key: app
+              operator: In
+              values:
+                - springboot-app
+        topologyKey: kubernetes.io/hostname
